@@ -27,7 +27,6 @@ process.chdir(path.join(__dirname, '../generators'));
 const plop = nodePlop('./index.js');
 const componentGen = plop.getGenerator('component');
 const containerGen = plop.getGenerator('container');
-const languageGen = plop.getGenerator('language');
 
 /**
  * Every generated component/container is preceded by this
@@ -213,7 +212,6 @@ async function generateComponent({ name, memo }) {
     .runActions({
       name: componentName,
       memo,
-      wantMessages: true,
       wantLoadable: true,
     })
     .then(handleResult)
@@ -248,7 +246,6 @@ async function generateContainer({ name, memo }) {
       wantHeaders: true,
       wantActionsAndReducer: true,
       wantSagas: true,
-      wantMessages: true,
       wantLoadable: true,
     })
     .then(handleResult)
@@ -288,89 +285,6 @@ async function generateComponents(components) {
 }
 
 /**
- * Test the language generator and rollback when successful
- * @param {string} language
- * @returns {Promise<*>}
- */
-async function generateLanguage(language) {
-  // Run generator
-  const generatedFiles = await languageGen
-    .runActions({ language, test: true })
-    .then(handleResult)
-    .then(feedbackToUser(`Added new language: '${language}'`))
-    .then(changes =>
-      changes.reduce((acc, change) => {
-        const pathWithRemovedAnsiEscapeCodes = change.path.replace(
-          /* eslint-disable-next-line no-control-regex */
-          /(\u001b\[3(?:4|9)m)/g,
-          '',
-        );
-        const obj = {};
-        obj[pathWithRemovedAnsiEscapeCodes] = change.type;
-        return Object.assign(acc, obj);
-      }, {}),
-    )
-    .catch(reason => reportErrors(reason));
-
-  // Run eslint on modified and added JS files
-  const lintingTasks = Object.keys(generatedFiles)
-    .filter(
-      filePath =>
-        generatedFiles[filePath] === 'modify' ||
-        generatedFiles[filePath] === 'add',
-    )
-    .filter(filePath => filePath.endsWith('.js'))
-    .map(async filePath => {
-      const result = await runLintingOnFile(filePath)
-        .then(reportSuccess(`Linting test passed for '${filePath}'`))
-        .catch(reason => reportErrors(reason));
-
-      return result;
-    });
-
-  await Promise.all(lintingTasks);
-
-  // Restore modified files
-  const restoreTasks = Object.keys(generatedFiles)
-    .filter(filePath => generatedFiles[filePath] === 'backup')
-    .map(async filePath => {
-      const result = await restoreModifiedFile(filePath)
-        .then(
-          feedbackToUser(
-            `Restored file: '${filePath.replace(
-              `.${BACKUPFILE_EXTENSION}`,
-              '',
-            )}'`,
-          ),
-        )
-        .catch(reason => reportErrors(reason));
-
-      return result;
-    });
-
-  await Promise.all(restoreTasks);
-
-  // Remove backup files and added files
-  const removalTasks = Object.keys(generatedFiles)
-    .filter(
-      filePath =>
-        generatedFiles[filePath] === 'backup' ||
-        generatedFiles[filePath] === 'add',
-    )
-    .map(async filePath => {
-      const result = await removeFile(filePath)
-        .then(feedbackToUser(`Removed '${filePath}'`))
-        .catch(reason => reportErrors(reason));
-
-      return result;
-    });
-
-  await Promise.all(removalTasks);
-
-  return language;
-}
-
-/**
  * Run
  */
 (async function () {
@@ -380,6 +294,4 @@ async function generateLanguage(language) {
     { kind: 'container', name: 'Container', memo: false },
     { kind: 'container', name: 'MemoizedContainer', memo: true },
   ]).catch(reason => reportErrors(reason));
-
-  await generateLanguage('fr').catch(reason => reportErrors(reason));
 })();
